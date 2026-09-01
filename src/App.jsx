@@ -225,16 +225,17 @@ function getStored(key, fallback = []) {
 }
 
 /* =========================================================
-   SUPABASE — PRESUPUESTOS
+   SUPABASE — SINCRONIZACIÓN DE PRESUPUESTOS
    ========================================================= */
 
-function budgetToDatabaseRow(budget) {
+function budgetToSupabaseRow(budget) {
   return {
     id: Number(budget.id),
     numero: budget.number || null,
     cliente_id: budget.clientId ? Number(budget.clientId) : null,
     cliente_nombre: budget.client || "",
     responsable: budget.responsible || "",
+    plan: budget.plan || "",
     importe: Number(budget.amount || 0),
     vencimiento: budget.expiration || null,
     estado: budget.status || "Pendiente",
@@ -245,32 +246,46 @@ function budgetToDatabaseRow(budget) {
   };
 }
 
-function databaseRowToBudget(row) {
+function budgetFromSupabaseRow(row) {
   return {
     id: Number(row.id),
     number: row.numero || "",
-    client: row.cliente_nombre || "",
     clientId: row.cliente_id ?? null,
+    client: row.cliente_nombre || "",
     responsible: row.responsable || "Daiana",
-    service: row.service || "",
+    service: "",
     plan: row.plan || "",
     amount: Number(row.importe || 0),
     status: row.estado || "Pendiente",
     date: row.created_at
       ? String(row.created_at).slice(0, 10)
       : todayISO(),
-    expiration: row.vencimiento || null,
+    observations: row.observaciones || "",
+    email: "",
+    phone: "",
+    address: "",
+    cuit: "",
+    fiscal: "",
     included: row.incluye
       ? String(row.incluye).split("\n").filter(Boolean)
       : [],
-    observations: row.observaciones || "",
-    email: row.email || "",
-    phone: row.phone || "",
-    address: row.address || "",
-    cuit: row.cuit || "",
-    fiscal: row.fiscal || "",
+    expiration: row.vencimiento || null,
     createdAt: row.created_at || new Date().toISOString(),
   };
+}
+
+async function fetchBudgetsFromSupabase() {
+  const { data, error } = await supabase
+    .from("presupuestos")
+    .select("*")
+    .order("id", { ascending: false });
+
+  if (error) {
+    console.error("Supabase: no se pudieron cargar presupuestos:", error);
+    return null;
+  }
+
+  return Array.isArray(data) ? data.map(budgetFromSupabaseRow) : [];
 }
 
 /* =========================================================
@@ -302,47 +317,57 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
 
-    const loadBudgetsFromSupabase = async () => {
-      const { data, error } = await supabase
-        .from("presupuestos")
-        .select("*")
-        .order("id", { ascending: false });
+    const syncBudgets = async () => {
+      const remoteBudgets = await fetchBudgetsFromSupabase();
 
-      if (error) {
-        console.error("Error cargando presupuestos desde Supabase:", error);
-        return;
-      }
+      if (remoteBudgets === null || cancelled) return;
 
-      if (!cancelled && Array.isArray(data)) {
-        const remoteBudgets = data.map(databaseRowToBudget);
-        setBudgets(remoteBudgets);
+      const localBudgets = getStored("conecta_budgets", []);
+
+      // Merge local + remote by id so existing data on either device
+      // is preserved during the first synchronization.
+      const mergedMap = new Map();
+
+      [...remoteBudgets, ...localBudgets].forEach((budget) => {
+        if (!budget || budget.id == null) return;
+        mergedMap.set(Number(budget.id), budget);
+      });
+
+      const mergedBudgets = Array.from(mergedMap.values())
+        .sort((a, b) => Number(b.id) - Number(a.id));
+
+      if (!cancelled) {
+        setBudgets(mergedBudgets);
         localStorage.setItem(
           "conecta_budgets",
-          JSON.stringify(remoteBudgets)
+          JSON.stringify(mergedBudgets)
         );
+      }
+
+      // Push the merged set so every device shares the same records.
+      if (mergedBudgets.length > 0) {
+        const rows = mergedBudgets.map(budgetToSupabaseRow);
+        const { error } = await supabase
+          .from("presupuestos")
+          .upsert(rows, { onConflict: "id" });
+
+        if (error) {
+          console.error(
+            "Supabase: no se pudieron sincronizar los presupuestos:",
+            error
+          );
+        }
       }
     };
 
-    loadBudgetsFromSupabase();
+    syncBudgets();
 
-    const channel = supabase
-      .channel("presupuestos-sync")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "presupuestos",
-        },
-        () => {
-          loadBudgetsFromSupabase();
-        }
-      )
-      .subscribe();
+    // Simple polling avoids depending on Realtime/WebSockets.
+    const intervalId = window.setInterval(syncBudgets, 10000);
 
     return () => {
       cancelled = true;
-      supabase.removeChannel(channel);
+      window.clearInterval(intervalId);
     };
   }, []);
 
@@ -436,7 +461,9 @@ export default function App() {
       JSON.stringify(data)
     );
 
-    const rows = data.map(budgetToDatabaseRow);
+    const rows = data
+      .filter((budget) => budget && budget.id != null)
+      .map(budgetToSupabaseRow);
 
     if (rows.length === 0) return;
 
@@ -445,7 +472,10 @@ export default function App() {
       .upsert(rows, { onConflict: "id" });
 
     if (error) {
-      console.error("Error guardando presupuestos en Supabase:", error);
+      console.error(
+        "Supabase: error guardando presupuestos:",
+        error
+      );
     }
   };
 
@@ -702,9 +732,6 @@ export default function App() {
         budgetForm.date
       ),
       ...budgetForm,
-      clientId: budgetForm.clientId
-        ? Number(budgetForm.clientId)
-        : null,
       client: budgetForm.client.trim(),
       amount: Number(budgetForm.amount),
       included: getPlanDetails(budgetForm.plan).items,
@@ -769,24 +796,11 @@ export default function App() {
       return;
     }
 
-    const remainingBudgets = budgets.filter(
-      (budget) => budget.id !== id
+    saveBudgets(
+      budgets.filter(
+        (budget) => budget.id !== id
+      )
     );
-
-    saveBudgets(remainingBudgets);
-
-    supabase
-      .from("presupuestos")
-      .delete()
-      .eq("id", Number(id))
-      .then(({ error }) => {
-        if (error) {
-          console.error(
-            "Error eliminando presupuesto de Supabase:",
-            error
-          );
-        }
-      });
   };
 
   /* =======================================================
