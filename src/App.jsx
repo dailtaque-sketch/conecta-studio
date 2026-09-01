@@ -270,6 +270,7 @@ export default function App() {
     useState({ ...emptyBudget });
 
   const [taskText, setTaskText] = useState("");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const permissions = getUserPermissions(currentUser);
 
@@ -314,7 +315,6 @@ export default function App() {
             {loginError && <div style={styles.loginError}>{loginError}</div>}
             <button type="submit" style={{ ...styles.primaryButton, width: "100%", marginTop: 10 }}>Ingresar</button>
           </form>
-          <div style={{ height: 20 }} />
         </div>
       </div>
     );
@@ -1220,13 +1220,35 @@ export default function App() {
   const navItems = NAV_ITEMS.filter((item) => permissions.includes(item.name));
 
   return (
-    <div style={styles.app}>
+    <div className="conecta-app" style={styles.app}>
+
+      <button
+        type="button"
+        className="conecta-mobile-toggle"
+        onClick={() => setMobileMenuOpen((value) => !value)}
+        aria-label={mobileMenuOpen ? "Cerrar menú" : "Abrir menú"}
+        aria-expanded={mobileMenuOpen}
+      >
+        {mobileMenuOpen ? "✕" : "☰"}
+      </button>
+
+      {mobileMenuOpen && (
+        <button
+          type="button"
+          className="conecta-mobile-overlay"
+          onClick={() => setMobileMenuOpen(false)}
+          aria-label="Cerrar menú"
+        />
+      )}
 
       {/* =================================================
           SIDEBAR
           ================================================= */}
 
-      <aside style={styles.sidebar}>
+      <aside
+        className={`conecta-sidebar${mobileMenuOpen ? " mobile-open" : ""}`}
+        style={styles.sidebar}
+      >
 
         <div style={styles.logoContainer}>
 
@@ -1282,9 +1304,10 @@ export default function App() {
             <button
               key={item.name}
               type="button"
-              onClick={() =>
-                setActive(item.name)
-              }
+              onClick={() => {
+                setActive(item.name);
+                setMobileMenuOpen(false);
+              }}
               style={{
                 ...styles.navButton,
                 ...(active === item.name
@@ -1312,7 +1335,7 @@ export default function App() {
             <strong>{currentUser?.name || "Usuario"}</strong>
             <small>{currentUser?.role || ""}</small>
           </div>
-          <button type="button" onClick={logout} title="Cerrar sesión" style={styles.logoutButton}>Salir</button>
+          <button type="button" onClick={() => { setMobileMenuOpen(false); logout(); }} title="Cerrar sesión" style={styles.logoutButton}>Salir</button>
         </div>
 
       </aside>
@@ -1321,9 +1344,9 @@ export default function App() {
           CONTENIDO
           ================================================= */}
 
-      <main style={styles.main}>
+      <main className="conecta-main" style={styles.main}>
 
-        <div style={styles.topBrand}>
+        <div className="conecta-top-brand" style={styles.topBrand}>
           <span>CONECTA COMMUNITY MANAGER STUDIO</span>
           <span style={styles.topUserBadge}>{currentUser?.name} · {currentUser?.role}</span>
         </div>
@@ -3680,7 +3703,9 @@ if (
     style.id = styleId;
 
     style.innerHTML = `
-      * {
+      *,
+      *::before,
+      *::after {
         box-sizing: border-box;
       }
 
@@ -3692,24 +3717,22 @@ if (
         width: 100%;
       }
 
+      body {
+        overflow-x: hidden;
+      }
+
       button,
       input,
       select,
       textarea {
-        font-family:
-          Inter,
-          Arial,
-          Helvetica,
-          sans-serif;
+        font-family: Inter, Arial, Helvetica, sans-serif;
       }
 
       input:focus,
       select:focus,
       textarea:focus {
         border-color: #b1844e !important;
-        box-shadow:
-          0 0 0 3px
-          rgba(177,132,78,0.12);
+        box-shadow: 0 0 0 3px rgba(177,132,78,0.12);
       }
 
       table th {
@@ -3721,14 +3744,12 @@ if (
         letter-spacing: 1.5px;
         font-weight: 800;
         white-space: nowrap;
-        border-bottom:
-          1px solid #e8ddd4;
+        border-bottom: 1px solid #e8ddd4;
       }
 
       table td {
         padding: 18px 14px;
-        border-bottom:
-          1px solid #eee5de;
+        border-bottom: 1px solid #eee5de;
         font-size: 13px;
         vertical-align: middle;
       }
@@ -3737,25 +3758,200 @@ if (
         border-bottom: none;
       }
 
-      @media (max-width: 1000px) {
-        .conecta-placeholder {
-          display: none;
-        }
+      .conecta-mobile-toggle,
+      .conecta-mobile-overlay {
+        display: none;
       }
 
-      @media (max-width: 850px) {
-        body {
-          overflow-x: hidden;
+      @media (max-width: 900px) {
+        .conecta-main {
+          width: 100% !important;
+          max-width: 100% !important;
         }
       }
 
       @media (max-width: 700px) {
-        #root > div {
-          flex-direction: column !important;
+        .conecta-app {
+          display: block !important;
+          width: 100% !important;
+          min-width: 0 !important;
+          overflow-x: hidden !important;
+        }
+
+        .conecta-mobile-toggle {
+          display: flex;
+          position: fixed;
+          top: 14px;
+          left: 14px;
+          width: 44px;
+          height: 44px;
+          align-items: center;
+          justify-content: center;
+          z-index: 1002;
+          border: 1px solid #e2d5c9;
+          border-radius: 12px;
+          background: #ffffff;
+          color: #6c4d31;
+          font-size: 22px;
+          font-weight: 800;
+          box-shadow: 0 8px 22px rgba(91,64,42,.12);
+          cursor: pointer;
+        }
+
+        .conecta-mobile-overlay {
+          display: block;
+          position: fixed;
+          inset: 0;
+          z-index: 1000;
+          border: 0;
+          padding: 0;
+          background: rgba(36,27,22,.28);
+          cursor: pointer;
+        }
+
+        .conecta-sidebar {
+          position: fixed !important;
+          top: 0 !important;
+          left: 0 !important;
+          width: min(82vw, 320px) !important;
+          min-width: 0 !important;
+          height: 100dvh !important;
+          min-height: 100dvh !important;
+          z-index: 1001 !important;
+          overflow-y: auto !important;
+          transform: translateX(-105%) !important;
+          transition: transform .22s ease !important;
+          box-shadow: 12px 0 35px rgba(36,27,22,.15) !important;
+        }
+
+        .conecta-sidebar.mobile-open {
+          transform: translateX(0) !important;
+        }
+
+        .conecta-main {
+          display: block !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          min-width: 0 !important;
+          margin: 0 !important;
+          padding: 74px 16px 40px !important;
+          overflow-x: hidden !important;
+        }
+
+        .conecta-top-brand {
+          padding-left: 50px !important;
+          padding-right: 8px !important;
+          text-align: center !important;
+          font-size: 10px !important;
+          letter-spacing: 2px !important;
+          line-height: 1.5 !important;
+          margin-bottom: 20px !important;
+        }
+
+        .conecta-top-brand > span {
+          display: block !important;
+          max-width: 100% !important;
+        }
+
+        .conecta-top-brand > span:last-child {
+          margin: 8px auto 0 !important;
+          width: fit-content !important;
+          max-width: 100% !important;
+          white-space: normal !important;
+        }
+
+        .conecta-main section {
+          width: 100% !important;
+          max-width: 100% !important;
+          min-width: 0 !important;
+        }
+
+        .conecta-main h1 {
+          font-size: 34px !important;
+          line-height: 1.08 !important;
+          overflow-wrap: anywhere !important;
+        }
+
+        .conecta-main h2 {
+          font-size: 23px !important;
+          line-height: 1.15 !important;
+          overflow-wrap: anywhere !important;
+        }
+
+        .conecta-main p {
+          overflow-wrap: anywhere !important;
+        }
+
+        .conecta-main [style*="grid-template-columns"] {
+          grid-template-columns: 1fr !important;
+        }
+
+        .conecta-main [style*="display: flex"] {
+          max-width: 100% !important;
+        }
+
+        .conecta-main button {
+          max-width: 100% !important;
+        }
+
+        .conecta-main input,
+        .conecta-main select,
+        .conecta-main textarea {
+          width: 100% !important;
+          max-width: 100% !important;
+          min-width: 0 !important;
+          font-size: 16px !important;
+        }
+
+        .conecta-main [style*="overflow-x: auto"] {
+          width: 100% !important;
+          max-width: 100% !important;
+          overflow-x: auto !important;
+          -webkit-overflow-scrolling: touch !important;
+        }
+
+        .conecta-main table {
+          min-width: 900px !important;
+        }
+
+        .conecta-main [style*="grid-column"] {
+          grid-column: 1 / -1 !important;
+        }
+
+        .conecta-main [style*="display: flex"] > button {
+          flex: 1 1 auto !important;
+        }
+      }
+
+      @media (max-width: 420px) {
+        .conecta-main {
+          padding-left: 12px !important;
+          padding-right: 12px !important;
+        }
+
+        .conecta-mobile-toggle {
+          top: 12px;
+          left: 12px;
+          width: 42px;
+          height: 42px;
+        }
+
+        .conecta-main h1 {
+          font-size: 30px !important;
+        }
+
+        .conecta-top-brand {
+          padding-left: 48px !important;
+          font-size: 9px !important;
         }
       }
 
       @media print {
+        .conecta-mobile-toggle,
+        .conecta-mobile-overlay {
+          display: none !important;
+        }
+
         body {
           background: white !important;
         }
