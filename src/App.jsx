@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { supabase } from "./lib/supabaseClient";
 
 /* =========================================================
    CONECTA COMMUNITY MANAGER STUDIO
@@ -224,6 +225,55 @@ function getStored(key, fallback = []) {
 }
 
 /* =========================================================
+   SUPABASE — PRESUPUESTOS
+   ========================================================= */
+
+function budgetToDatabaseRow(budget) {
+  return {
+    id: Number(budget.id),
+    numero: budget.number || null,
+    cliente_id: budget.clientId ? Number(budget.clientId) : null,
+    cliente_nombre: budget.client || "",
+    responsable: budget.responsible || "",
+    importe: Number(budget.amount || 0),
+    vencimiento: budget.expiration || null,
+    estado: budget.status || "Pendiente",
+    incluye: Array.isArray(budget.included)
+      ? budget.included.join("\n")
+      : (budget.included || ""),
+    observaciones: budget.observations || "",
+  };
+}
+
+function databaseRowToBudget(row) {
+  return {
+    id: Number(row.id),
+    number: row.numero || "",
+    client: row.cliente_nombre || "",
+    clientId: row.cliente_id ?? null,
+    responsible: row.responsable || "Daiana",
+    service: row.service || "",
+    plan: row.plan || "",
+    amount: Number(row.importe || 0),
+    status: row.estado || "Pendiente",
+    date: row.created_at
+      ? String(row.created_at).slice(0, 10)
+      : todayISO(),
+    expiration: row.vencimiento || null,
+    included: row.incluye
+      ? String(row.incluye).split("\n").filter(Boolean)
+      : [],
+    observations: row.observaciones || "",
+    email: row.email || "",
+    phone: row.phone || "",
+    address: row.address || "",
+    cuit: row.cuit || "",
+    fiscal: row.fiscal || "",
+    createdAt: row.created_at || new Date().toISOString(),
+  };
+}
+
+/* =========================================================
    APP
    ========================================================= */
 
@@ -248,6 +298,53 @@ export default function App() {
   const [budgets, setBudgets] = useState(() =>
     getStored("conecta_budgets", [])
   );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadBudgetsFromSupabase = async () => {
+      const { data, error } = await supabase
+        .from("presupuestos")
+        .select("*")
+        .order("id", { ascending: false });
+
+      if (error) {
+        console.error("Error cargando presupuestos desde Supabase:", error);
+        return;
+      }
+
+      if (!cancelled && Array.isArray(data)) {
+        const remoteBudgets = data.map(databaseRowToBudget);
+        setBudgets(remoteBudgets);
+        localStorage.setItem(
+          "conecta_budgets",
+          JSON.stringify(remoteBudgets)
+        );
+      }
+    };
+
+    loadBudgetsFromSupabase();
+
+    const channel = supabase
+      .channel("presupuestos-sync")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "presupuestos",
+        },
+        () => {
+          loadBudgetsFromSupabase();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const [payments, setPayments] = useState(() =>
     getStored("conecta_payments", [])
@@ -332,12 +429,24 @@ export default function App() {
     );
   };
 
-  const saveBudgets = (data) => {
+  const saveBudgets = async (data) => {
     setBudgets(data);
     localStorage.setItem(
       "conecta_budgets",
       JSON.stringify(data)
     );
+
+    const rows = data.map(budgetToDatabaseRow);
+
+    if (rows.length === 0) return;
+
+    const { error } = await supabase
+      .from("presupuestos")
+      .upsert(rows, { onConflict: "id" });
+
+    if (error) {
+      console.error("Error guardando presupuestos en Supabase:", error);
+    }
   };
 
   const savePayments = (data) => {
@@ -593,6 +702,9 @@ export default function App() {
         budgetForm.date
       ),
       ...budgetForm,
+      clientId: budgetForm.clientId
+        ? Number(budgetForm.clientId)
+        : null,
       client: budgetForm.client.trim(),
       amount: Number(budgetForm.amount),
       included: getPlanDetails(budgetForm.plan).items,
@@ -657,11 +769,24 @@ export default function App() {
       return;
     }
 
-    saveBudgets(
-      budgets.filter(
-        (budget) => budget.id !== id
-      )
+    const remainingBudgets = budgets.filter(
+      (budget) => budget.id !== id
     );
+
+    saveBudgets(remainingBudgets);
+
+    supabase
+      .from("presupuestos")
+      .delete()
+      .eq("id", Number(id))
+      .then(({ error }) => {
+        if (error) {
+          console.error(
+            "Error eliminando presupuesto de Supabase:",
+            error
+          );
+        }
+      });
   };
 
   /* =======================================================
