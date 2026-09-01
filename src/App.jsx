@@ -454,7 +454,7 @@ export default function App() {
     );
   };
 
-  const saveBudgets = async (data) => {
+  const saveBudgets = async (data, showError = true) => {
     setBudgets(data);
     localStorage.setItem(
       "conecta_budgets",
@@ -465,18 +465,29 @@ export default function App() {
       .filter((budget) => budget && budget.id != null)
       .map(budgetToSupabaseRow);
 
-    if (rows.length === 0) return;
+    if (rows.length === 0) {
+      return { ok: true };
+    }
 
     const { error } = await supabase
       .from("presupuestos")
       .upsert(rows, { onConflict: "id" });
 
     if (error) {
-      console.error(
-        "Supabase: error guardando presupuestos:",
-        error
-      );
+      console.error("Supabase: error guardando presupuestos:", error);
+
+      if (showError) {
+        alert(
+          "El presupuesto quedó guardado en este dispositivo, pero NO se pudo guardar en la base compartida.\\n\\n" +
+          "Error de Supabase: " +
+          (error.message || "Error desconocido")
+        );
+      }
+
+      return { ok: false, error };
     }
+
+    return { ok: true };
   };
 
   const savePayments = (data) => {
@@ -697,7 +708,7 @@ export default function App() {
     ]);
   };
 
-  const addBudget = (e) => {
+  const addBudget = async (e) => {
     e.preventDefault();
 
     if (!budgetForm.client.trim()) {
@@ -744,7 +755,11 @@ export default function App() {
       newBudget,
     ];
 
-    saveBudgets(updatedBudgets);
+    const result = await saveBudgets(updatedBudgets);
+
+    if (!result?.ok) {
+      return;
+    }
 
     if (newBudget.status === "Aprobado") {
       addPaymentFromBudget(newBudget);
