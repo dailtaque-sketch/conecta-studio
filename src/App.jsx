@@ -393,6 +393,10 @@ export default function App() {
 
   const [taskText, setTaskText] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [clientSearch, setClientSearch] = useState("");
+  const [editingClientId, setEditingClientId] = useState(null);
+  const [clientAccountId, setClientAccountId] = useState(null);
+  const [editingBudgetId, setEditingBudgetId] = useState(null);
 
   const permissions = getUserPermissions(currentUser);
 
@@ -557,7 +561,7 @@ export default function App() {
     }
 
     const newClient = {
-      id: Date.now(),
+      id: editingClientId ?? Date.now(),
       name: clientForm.name.trim(),
       rubro: clientForm.rubro,
       service: clientForm.service,
@@ -565,12 +569,21 @@ export default function App() {
       monthly: Number(clientForm.monthly),
       status: clientForm.status,
       createdBy: clientForm.createdBy,
-      createdAt: todayISO(),
+      createdAt: editingClientId
+        ? (clients.find((client) => client.id === editingClientId)?.createdAt || todayISO())
+        : todayISO(),
     };
 
-    saveClients([...clients, newClient]);
+    const updatedClients = editingClientId
+      ? clients.map((client) =>
+          client.id === editingClientId ? newClient : client
+        )
+      : [...clients, newClient];
+
+    saveClients(updatedClients);
 
     setClientForm({ ...emptyClient });
+    setEditingClientId(null);
     setShowClientForm(false);
   };
 
@@ -582,6 +595,64 @@ export default function App() {
     saveClients(
       clients.filter((client) => client.id !== id)
     );
+  };
+
+  const editClient = (client) => {
+    setClientForm({
+      name: client.name || "",
+      rubro: client.rubro || "",
+      service: client.service || "",
+      plan: client.plan || "",
+      monthly: String(client.monthly ?? ""),
+      status: client.status || "Activo",
+      createdBy: client.createdBy || "",
+    });
+    setEditingClientId(client.id);
+    setShowClientForm(true);
+    setActive("Clientes");
+  };
+
+  const openClientAccount = (client) => {
+    setClientAccountId(client.id);
+    setActive("Pagos");
+    setMobileMenuOpen(false);
+  };
+
+  const openBudgetForClient = (client) => {
+    setBudgetForm({
+      ...emptyBudget,
+      client: client.name || "",
+      service: client.service || "",
+      plan: client.plan || "",
+      amount: client.monthly ? String(client.monthly) : "",
+      date: todayISO(),
+      responsible: client.createdBy || "Daiana",
+    });
+    setEditingBudgetId(null);
+    setShowBudgetForm(true);
+    setActive("Presupuestos");
+    setMobileMenuOpen(false);
+  };
+
+  const handleClientAction = (client, action) => {
+    if (!action) return;
+
+    switch (action) {
+      case "account":
+        openClientAccount(client);
+        break;
+      case "budget":
+        openBudgetForClient(client);
+        break;
+      case "edit":
+        editClient(client);
+        break;
+      case "delete":
+        deleteClient(client.id);
+        break;
+      default:
+        break;
+    }
   };
 
   /* =======================================================
@@ -675,7 +746,7 @@ export default function App() {
       date: todayISO(),
       responsible: "Daiana",
     });
-
+    setEditingBudgetId(null);
     setShowBudgetForm(true);
     setActive("Presupuestos");
   };
@@ -736,9 +807,13 @@ export default function App() {
       15
     );
 
-    const newBudget = {
-      id: Date.now(),
-      number: generateBudgetNumber(
+    const existingBudget = editingBudgetId
+      ? budgets.find((item) => item.id === editingBudgetId)
+      : null;
+
+    const nextBudget = {
+      id: editingBudgetId ?? Date.now(),
+      number: existingBudget?.number || generateBudgetNumber(
         budgets,
         budgetForm.date
       ),
@@ -747,13 +822,14 @@ export default function App() {
       amount: Number(budgetForm.amount),
       included: getPlanDetails(budgetForm.plan).items,
       expiration,
-      createdAt: new Date().toISOString(),
+      createdAt: existingBudget?.createdAt || new Date().toISOString(),
     };
 
-    const updatedBudgets = [
-      ...budgets,
-      newBudget,
-    ];
+    const updatedBudgets = editingBudgetId
+      ? budgets.map((budget) =>
+          budget.id === editingBudgetId ? nextBudget : budget
+        )
+      : [...budgets, nextBudget];
 
     const result = await saveBudgets(updatedBudgets);
 
@@ -761,18 +837,17 @@ export default function App() {
       return;
     }
 
-    if (newBudget.status === "Aprobado") {
-      addPaymentFromBudget(newBudget);
+    if (nextBudget.status === "Aprobado") {
+      addPaymentFromBudget(nextBudget);
     }
 
     setBudgetForm({
       ...emptyBudget,
       date: todayISO(),
     });
-
+    setEditingBudgetId(null);
     setShowBudgetForm(false);
   };
-
   const changeBudgetStatus = (
     budgetId,
     newStatus
@@ -799,6 +874,64 @@ export default function App() {
         ...budget,
         status: "Aprobado",
       });
+    }
+  };
+
+  const editBudget = (budget) => {
+    setBudgetForm({
+      ...emptyBudget,
+      ...budget,
+      amount: String(budget.amount ?? ""),
+      date: budget.date || todayISO(),
+      responsible: budget.responsible || "Daiana",
+    });
+    setEditingBudgetId(budget.id);
+    setShowBudgetForm(true);
+    setActive("Presupuestos");
+  };
+
+  const duplicateBudget = async (budget) => {
+    const copy = {
+      ...budget,
+      id: Date.now(),
+      number: generateBudgetNumber(budgets, todayISO()),
+      date: todayISO(),
+      expiration: addDays(todayISO(), 15),
+      createdAt: new Date().toISOString(),
+      status: "Pendiente",
+    };
+
+    const result = await saveBudgets([...budgets, copy]);
+    if (result?.ok) {
+      alert("Presupuesto duplicado correctamente.");
+    }
+  };
+
+  const handleBudgetAction = (budget, action) => {
+    if (!action) return;
+
+    switch (action) {
+      case "edit":
+        editBudget(budget);
+        break;
+      case "pdf":
+      case "download":
+        generateBudgetPDF(budget);
+        break;
+      case "duplicate":
+        duplicateBudget(budget);
+        break;
+      case "approve":
+        changeBudgetStatus(budget.id, "Aprobado");
+        break;
+      case "reject":
+        changeBudgetStatus(budget.id, "Rechazado");
+        break;
+      case "delete":
+        deleteBudget(budget.id);
+        break;
+      default:
+        break;
     }
   };
 
@@ -1600,7 +1733,7 @@ export default function App() {
               >
 
                 <h2>
-                  Nuevo cliente
+                  {editingClientId ? "Editar cliente" : "Nuevo cliente"}
                 </h2>
 
                 <p
@@ -1799,7 +1932,7 @@ export default function App() {
                       styles.primaryButton
                     }
                   >
-                    Guardar cliente
+                    {editingClientId ? "Guardar cambios" : "Guardar cliente"}
                   </button>
 
                   <button
@@ -1808,13 +1941,9 @@ export default function App() {
                       styles.secondaryButton
                     }
                     onClick={() => {
-                      setShowClientForm(
-                        false
-                      );
-
-                      setClientForm({
-                        ...emptyClient,
-                      });
+                      setShowClientForm(false);
+                      setEditingClientId(null);
+                      setClientForm({ ...emptyClient });
                     }}
                   >
                     Cancelar
@@ -1825,132 +1954,95 @@ export default function App() {
               </form>
             )}
 
+            <div style={styles.clientToolbar}>
+              <div>
+                <strong style={styles.toolbarTitle}>Cartera de clientes</strong>
+                <span style={styles.toolbarMeta}>
+                  {clients.length} {clients.length === 1 ? "cliente" : "clientes"}
+                </span>
+              </div>
+              <input
+                type="search"
+                value={clientSearch}
+                onChange={(e) => setClientSearch(e.target.value)}
+                placeholder="Buscar por nombre, rubro o servicio..."
+                style={styles.searchInput}
+              />
+            </div>
+
             <div style={styles.clientList}>
 
               {clients.length === 0 ? (
                 <div style={styles.empty}>
-
-                  <h2>
-                    No hay clientes todavía
-                  </h2>
-
-                  <p>
-                    Agregá tu primer cliente
-                    para comenzar.
-                  </p>
-
+                  <h2>No hay clientes todavía</h2>
+                  <p>Agregá tu primer cliente para comenzar.</p>
                 </div>
               ) : (
-                clients.map((client) => (
-                  <div
-                    key={client.id}
-                    style={styles.clientCard}
-                  >
+                clients
+                  .filter((client) => {
+                    const q = clientSearch.trim().toLowerCase();
+                    if (!q) return true;
+                    return [client.name, client.rubro, client.service, client.plan]
+                      .filter(Boolean)
+                      .join(" ")
+                      .toLowerCase()
+                      .includes(q);
+                  })
+                  .map((client) => (
+                    <div key={client.id} style={styles.clientCard}>
+                      <div style={styles.clientMainInfo}>
+                        <div style={styles.clientAvatar}>{(client.name || "C").slice(0, 1).toUpperCase()}</div>
+                        <div>
+                          <h3 style={styles.clientName}>{client.name}</h3>
+                          <p style={styles.clientMeta}>{client.rubro} · {client.service}</p>
+                          <small style={styles.clientOrigin}>Conseguido por <strong>{client.createdBy}</strong></small>
+                        </div>
+                      </div>
 
-                    <div>
-                      <h3>
-                        {client.name}
-                      </h3>
+                      <div>
+                        <span style={styles.labelSmall}>PLAN</span>
+                        <strong>{client.plan}</strong>
+                      </div>
 
-                      <p>
-                        {client.rubro}
-                        {" · "}
-                        {client.service}
-                      </p>
+                      <div>
+                        <span style={styles.labelSmall}>MENSUAL</span>
+                        <strong>{formatMoney(client.monthly)}</strong>
+                      </div>
 
-                      <small>
-                        Cliente conseguido
-                        por:{" "}
-                        <strong>
-                          {client.createdBy}
-                        </strong>
-                      </small>
-                    </div>
-
-                    <div>
-                      <span
-                        style={
-                          styles.labelSmall
-                        }
-                      >
-                        PLAN
-                      </span>
-
-                      <strong>
-                        {client.plan}
-                      </strong>
-                    </div>
-
-                    <div>
-                      <span
-                        style={
-                          styles.labelSmall
-                        }
-                      >
-                        MENSUAL
-                      </span>
-
-                      <strong>
-                        {formatMoney(
-                          client.monthly
-                        )}
-                      </strong>
-                    </div>
-
-                    <div>
-                      <span
-                        style={{
+                      <div>
+                        <span style={{
                           ...styles.status,
-                          ...(client.status ===
-                          "Activo"
-                            ? styles.statusActive
-                            : styles.statusInactive),
-                        }}
-                      >
-                        {client.status}
-                      </span>
+                          ...(client.status === "Activo" ? styles.statusActive : styles.statusInactive),
+                        }}>
+                          {client.status}
+                        </span>
+                      </div>
+
+                      <div>
+                        <span style={styles.labelSmall}>COMISIÓN</span>
+                        <strong>
+                          {client.createdBy === "Daiana" || client.createdBy === "Ayelen"
+                            ? "Sin comisión"
+                            : formatMoney(commissionForClient(client))}
+                        </strong>
+                      </div>
+
+                      <div style={styles.clientActionsCell}>
+                        <label style={styles.labelSmall}>ACCIONES</label>
+                        <select
+                          value=""
+                          onChange={(e) => handleClientAction(client, e.target.value)}
+                          style={styles.actionSelect}
+                        >
+                          <option value="">Seleccionar...</option>
+                          <option value="account">Cuenta corriente</option>
+                          <option value="budget">Nuevo presupuesto</option>
+                          <option value="edit">Editar cliente</option>
+                          <option value="delete">Eliminar cliente</option>
+                        </select>
+                      </div>
                     </div>
-
-                    <div>
-                      <span
-                        style={
-                          styles.labelSmall
-                        }
-                      >
-                        COMISIÓN
-                      </span>
-
-                      <strong>
-                        {client.createdBy ===
-                          "Daiana" ||
-                        client.createdBy ===
-                          "Ayelen"
-                          ? "Sin comisión"
-                          : formatMoney(
-                              commissionForClient(
-                                client
-                              )
-                            )}
-                      </strong>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        deleteClient(
-                          client.id
-                        )
-                      }
-                      style={
-                        styles.deleteButton
-                      }
-                      title="Eliminar cliente"
-                    >
-                      🗑
-                    </button>
-
-                  </div>
-                ))
+                  ))
               )}
 
             </div>
@@ -1986,7 +2078,7 @@ export default function App() {
               >
 
                 <h2>
-                  Nuevo presupuesto
+                  {editingBudgetId ? "Editar presupuesto" : "Nuevo presupuesto"}
                 </h2>
 
                 <p
@@ -2361,7 +2453,7 @@ export default function App() {
                       styles.primaryButton
                     }
                   >
-                    Guardar presupuesto
+                    {editingBudgetId ? "Guardar cambios" : "Guardar presupuesto"}
                   </button>
 
                   <button
@@ -2369,11 +2461,10 @@ export default function App() {
                     style={
                       styles.secondaryButton
                     }
-                    onClick={() =>
-                      setShowBudgetForm(
-                        false
-                      )
-                    }
+                    onClick={() => {
+                      setShowBudgetForm(false);
+                      setEditingBudgetId(null);
+                    }}
                   >
                     Cancelar
                   </button>
@@ -2525,41 +2616,24 @@ export default function App() {
 
                           <td>
 
-                            <div
-                              style={
-                                styles.actionButtons
-                              }
+                            <select
+                              value=""
+                              onChange={(e) => handleBudgetAction(budget, e.target.value)}
+                              style={styles.actionSelect}
                             >
-
-                              <button
-                                type="button"
-                                style={
-                                  styles.pdfButton
-                                }
-                                onClick={() =>
-                                  generateBudgetPDF(
-                                    budget
-                                  )
-                                }
-                              >
-                                PDF
-                              </button>
-
-                              <button
-                                type="button"
-                                style={
-                                  styles.deleteSmallButton
-                                }
-                                onClick={() =>
-                                  deleteBudget(
-                                    budget.id
-                                  )
-                                }
-                              >
-                                Eliminar
-                              </button>
-
-                            </div>
+                              <option value="">Seleccionar...</option>
+                              <option value="edit">Editar presupuesto</option>
+                              <option value="pdf">Ver / imprimir PDF</option>
+                              <option value="download">Descargar PDF</option>
+                              <option value="duplicate">Duplicar</option>
+                              {budget.status !== "Aprobado" && (
+                                <option value="approve">Marcar aprobado</option>
+                              )}
+                              {budget.status !== "Rechazado" && (
+                                <option value="reject">Marcar rechazado</option>
+                              )}
+                              <option value="delete">Eliminar</option>
+                            </select>
 
                           </td>
 
@@ -2585,9 +2659,54 @@ export default function App() {
           <section>
 
             <PageTitle
-              title="Pagos / Facturación"
-              subtitle="Los presupuestos aprobados pasan automáticamente a facturación."
+              title={clientAccountId ? "Cuenta corriente" : "Pagos / Facturación"}
+              subtitle={clientAccountId
+                ? `Seguimiento comercial de ${clients.find((client) => client.id === clientAccountId)?.name || "cliente"}.`
+                : "Los presupuestos aprobados pasan automáticamente a facturación."}
+              action={clientAccountId ? (
+                <button
+                  type="button"
+                  style={styles.secondaryButton}
+                  onClick={() => setClientAccountId(null)}
+                >
+                  Ver todos
+                </button>
+              ) : null}
             />
+
+            {clientAccountId && (() => {
+              const accountClient = clients.find((client) => client.id === clientAccountId);
+              const accountBudgets = budgets.filter((budget) =>
+                budget.clientId === clientAccountId ||
+                (accountClient && budget.client?.toLowerCase() === accountClient.name?.toLowerCase())
+              );
+              const accountPayments = payments.filter((payment) =>
+                accountClient && payment.client?.toLowerCase() === accountClient.name?.toLowerCase()
+              );
+              const approvedTotal = accountBudgets
+                .filter((budget) => budget.status === "Aprobado")
+                .reduce((sum, budget) => sum + Number(budget.amount || 0), 0);
+              const collectedTotal = accountPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+              const balance = approvedTotal - collectedTotal;
+
+              return (
+                <div style={styles.accountPanel}>
+                  <div style={styles.accountIdentity}>
+                    <div style={styles.clientAvatarLarge}>{(accountClient?.name || "C").slice(0, 1).toUpperCase()}</div>
+                    <div>
+                      <div style={styles.accountEyebrow}>CUENTA CORRIENTE</div>
+                      <h2 style={styles.accountName}>{accountClient?.name || "Cliente"}</h2>
+                      <p style={styles.accountMeta}>{accountClient?.rubro || ""} · {accountClient?.service || ""}</p>
+                    </div>
+                  </div>
+                  <div style={styles.accountStats}>
+                    <div style={styles.accountStatBox}><span>APROBADO</span><strong>{formatMoney(approvedTotal)}</strong></div>
+                    <div style={styles.accountStatBox}><span>REGISTRADO</span><strong>{formatMoney(collectedTotal)}</strong></div>
+                    <div style={styles.accountStatBox}><span>SALDO</span><strong>{formatMoney(balance)}</strong></div>
+                  </div>
+                </div>
+              );
+            })()}
 
             <div
               style={styles.statsGrid}
@@ -2642,7 +2761,7 @@ export default function App() {
 
                 <tbody>
 
-                  {payments.length === 0 ? (
+                  {(clientAccountId ? payments.filter((payment) => { const c = clients.find((client) => client.id === clientAccountId); return c && payment.client?.toLowerCase() === c.name?.toLowerCase(); }) : payments).length === 0 ? (
                     <tr>
                       <td
                         colSpan="7"
@@ -2662,7 +2781,7 @@ export default function App() {
                       </td>
                     </tr>
                   ) : (
-                    payments.map(
+                    (clientAccountId ? payments.filter((payment) => { const c = clients.find((client) => client.id === clientAccountId); return c && payment.client?.toLowerCase() === c.name?.toLowerCase(); }) : payments).map(
                       (payment) => (
                         <tr
                           key={
@@ -3534,6 +3653,159 @@ const styles = {
     display: "flex",
     gap: "12px",
     marginTop: "25px",
+  },
+
+  clientToolbar: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "18px",
+    marginBottom: "14px",
+    padding: "16px 18px",
+    background: "#ffffff",
+    border: "1px solid #e2d5c9",
+    borderRadius: "14px",
+  },
+
+  toolbarTitle: {
+    display: "block",
+    fontSize: "14px",
+    color: "#3f3027",
+  },
+
+  toolbarMeta: {
+    display: "block",
+    marginTop: "3px",
+    fontSize: "12px",
+    color: "#988779",
+  },
+
+  searchInput: {
+    width: "min(420px, 100%)",
+    padding: "12px 14px",
+    borderRadius: "10px",
+    border: "1px solid #d8cabe",
+    background: "#fbf8f5",
+    color: "#241b16",
+    fontSize: "14px",
+    outline: "none",
+    boxSizing: "border-box",
+  },
+
+  clientMainInfo: {
+    display: "flex",
+    alignItems: "center",
+    gap: "13px",
+    minWidth: 0,
+  },
+
+  clientAvatar: {
+    width: "42px",
+    height: "42px",
+    borderRadius: "12px",
+    background: "#f0e4d8",
+    color: "#a36f3a",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 800,
+    flex: "0 0 auto",
+  },
+
+  clientName: {
+    margin: 0,
+    fontSize: "17px",
+    fontWeight: 800,
+    color: "#2f231d",
+  },
+
+  clientMeta: {
+    margin: "4px 0",
+    fontSize: "13px",
+    color: "#746255",
+  },
+
+  clientOrigin: {
+    color: "#9a897b",
+  },
+
+  clientActionsCell: {
+    minWidth: "170px",
+  },
+
+  actionSelect: {
+    width: "100%",
+    minWidth: "165px",
+    padding: "10px 12px",
+    borderRadius: "10px",
+    border: "1px solid #d7c7b9",
+    background: "#ffffff",
+    color: "#4e3b2e",
+    fontWeight: 700,
+    fontSize: "13px",
+    cursor: "pointer",
+    outline: "none",
+  },
+
+  accountPanel: {
+    background: "#ffffff",
+    border: "1px solid #e2d5c9",
+    borderRadius: "20px",
+    padding: "24px",
+    marginBottom: "26px",
+    boxShadow: "0 10px 30px rgba(91,64,42,0.05)",
+  },
+
+  accountIdentity: {
+    display: "flex",
+    alignItems: "center",
+    gap: "15px",
+  },
+
+  clientAvatarLarge: {
+    width: "58px",
+    height: "58px",
+    borderRadius: "16px",
+    background: "#f0e4d8",
+    color: "#a36f3a",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 900,
+    fontSize: "20px",
+  },
+
+  accountEyebrow: {
+    color: "#a87948",
+    fontSize: "10px",
+    fontWeight: 800,
+    letterSpacing: "2px",
+  },
+
+  accountName: {
+    margin: "5px 0 2px",
+    fontSize: "25px",
+    color: "#2f231d",
+  },
+
+  accountMeta: {
+    margin: 0,
+    color: "#7c6a5c",
+    fontSize: "13px",
+  },
+
+  accountStats: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gap: "12px",
+    marginTop: "20px",
+  },
+
+  accountStatBox: {
+    padding: "14px 15px",
+    border: "1px solid #eadfd7",
+    borderRadius: "12px",
+    background: "#fbf8f5",
   },
 
   clientList: {
