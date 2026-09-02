@@ -1970,6 +1970,15 @@ export default function App() {
               />
             </div>
 
+            <div style={styles.clientListHeader}>
+              <div>CLIENTE</div>
+              <div>PLAN</div>
+              <div>MENSUAL</div>
+              <div>ESTADO</div>
+              <div>COMISIÓN</div>
+              <div>ACCIONES</div>
+            </div>
+
             <div style={styles.clientList}>
 
               {clients.length === 0 ? (
@@ -2614,8 +2623,9 @@ export default function App() {
 
                           </td>
 
-                          <td>
+                          <td style={styles.tableActionCell}>
 
+                            <div style={styles.tableActionLabel}>ACCIONES</div>
                             <select
                               value=""
                               onChange={(e) => handleBudgetAction(budget, e.target.value)}
@@ -3660,11 +3670,12 @@ const styles = {
     justifyContent: "space-between",
     alignItems: "center",
     gap: "18px",
-    marginBottom: "14px",
-    padding: "16px 18px",
-    background: "#ffffff",
+    marginBottom: "12px",
+    padding: "18px 20px",
+    background: "linear-gradient(180deg, #ffffff 0%, #fcf9f6 100%)",
     border: "1px solid #e2d5c9",
-    borderRadius: "14px",
+    borderRadius: "16px",
+    boxShadow: "0 8px 24px rgba(91,64,42,0.05)",
   },
 
   toolbarTitle: {
@@ -3736,15 +3747,29 @@ const styles = {
   actionSelect: {
     width: "100%",
     minWidth: "165px",
-    padding: "10px 12px",
-    borderRadius: "10px",
-    border: "1px solid #d7c7b9",
-    background: "#ffffff",
-    color: "#4e3b2e",
-    fontWeight: 700,
+    padding: "11px 13px",
+    borderRadius: "11px",
+    border: "1px solid #d5c2b1",
+    background: "#fbf8f5",
+    color: "#433227",
+    fontWeight: 800,
     fontSize: "13px",
     cursor: "pointer",
     outline: "none",
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.8)",
+  },
+
+  tableActionCell: {
+    minWidth: "170px",
+    verticalAlign: "middle",
+  },
+
+  tableActionLabel: {
+    fontSize: "9px",
+    fontWeight: 800,
+    letterSpacing: "1.8px",
+    color: "#a38c7b",
+    marginBottom: "6px",
   },
 
   accountPanel: {
@@ -3808,28 +3833,39 @@ const styles = {
     background: "#fbf8f5",
   },
 
+  clientListHeader: {
+    display: "grid",
+    gridTemplateColumns: "minmax(220px, 2fr) minmax(100px,1fr) minmax(100px,1fr) minmax(90px,auto) minmax(100px,1fr) minmax(170px,1.1fr)",
+    gap: "20px",
+    alignItems: "center",
+    padding: "11px 25px",
+    marginBottom: "8px",
+    color: "#9a8676",
+    fontSize: "10px",
+    fontWeight: 800,
+    letterSpacing: "1.7px",
+    textTransform: "uppercase",
+  },
+
   clientList: {
     display: "flex",
     flexDirection: "column",
-    gap: "14px",
+    gap: "12px",
     width: "100%",
   },
 
   clientCard: {
     background: "#ffffff",
-    border:
-      "1px solid #e2d5c9",
+    border: "1px solid #e2d5c9",
     borderRadius: "18px",
-    padding:
-      "22px 25px",
+    padding: "19px 20px",
     display: "grid",
-    gridTemplateColumns:
-      "minmax(220px, 2fr) minmax(100px,1fr) minmax(100px,1fr) auto minmax(100px,1fr) auto",
+    gridTemplateColumns: "minmax(220px, 2fr) minmax(100px,1fr) minmax(100px,1fr) auto minmax(100px,1fr) minmax(170px,1.1fr)",
     gap: "20px",
     alignItems: "center",
-    boxShadow:
-      "0 7px 20px rgba(91,64,42,0.04)",
+    boxShadow: "0 8px 24px rgba(91,64,42,0.045)",
     minWidth: 0,
+    transition: "transform 120ms ease, box-shadow 120ms ease",
   },
 
   labelSmall: {
