@@ -397,6 +397,21 @@ export default function App() {
   const [editingClientId, setEditingClientId] = useState(null);
   const [clientAccountId, setClientAccountId] = useState(null);
   const [editingBudgetId, setEditingBudgetId] = useState(null);
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [paymentForm, setPaymentForm] = useState({
+    client: "",
+    amount: "",
+    responsible: "",
+    plan: "",
+    status: "Cobrado",
+    date: todayISO(),
+    method: "Transferencia",
+    observations: "",
+  });
+  const [paymentClientFilter, setPaymentClientFilter] = useState("");
+  const [paymentResponsibleFilter, setPaymentResponsibleFilter] = useState("");
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState("");
+  const [editingPaymentId, setEditingPaymentId] = useState(null);
 
   const permissions = getUserPermissions(currentUser);
 
@@ -1436,22 +1451,115 @@ export default function App() {
      PAGOS
      ======================================================= */
 
-  const deletePayment = (id) => {
-    if (
-      !window.confirm(
-        "¿Eliminar este registro de pago?"
-      )
-    ) {
+  const openNewPayment = (client = null) => {
+    const selectedClient = client || null;
+    setPaymentForm({
+      client: selectedClient?.name || "",
+      amount: selectedClient?.monthly ? String(selectedClient.monthly) : "",
+      responsible: selectedClient?.createdBy || "",
+      plan: selectedClient?.plan || "",
+      status: "Cobrado",
+      date: todayISO(),
+      method: "Transferencia",
+      observations: "",
+    });
+    setEditingPaymentId(null);
+    setShowPaymentForm(true);
+  };
+
+  const handlePaymentClientChange = (clientName) => {
+    const selected = clients.find(
+      (client) => client.name === clientName
+    );
+
+    setPaymentForm((prev) => ({
+      ...prev,
+      client: clientName,
+      amount: selected?.monthly ? String(selected.monthly) : prev.amount,
+      plan: selected?.plan || prev.plan,
+      responsible: selected?.createdBy || prev.responsible,
+    }));
+  };
+
+  const savePaymentForm = (e) => {
+    e.preventDefault();
+
+    if (!paymentForm.client) {
+      alert("Seleccioná un cliente.");
       return;
     }
 
+    if (!paymentForm.amount || Number(paymentForm.amount) <= 0) {
+      alert("Ingresá un importe válido.");
+      return;
+    }
+
+    const newPayment = {
+      id: editingPaymentId ?? Date.now(),
+      client: paymentForm.client,
+      amount: Number(paymentForm.amount),
+      responsible: paymentForm.responsible || "-",
+      plan: paymentForm.plan || "-",
+      status: paymentForm.status,
+      date: paymentForm.date || todayISO(),
+      method: paymentForm.method || "Transferencia",
+      observations: paymentForm.observations || "",
+    };
+
+    const updatedPayments = editingPaymentId
+      ? payments.map((payment) =>
+          payment.id === editingPaymentId ? newPayment : payment
+        )
+      : [newPayment, ...payments];
+
+    savePayments(updatedPayments);
+    setPaymentForm({
+      client: "",
+      amount: "",
+      responsible: "",
+      plan: "",
+      status: "Cobrado",
+      date: todayISO(),
+      method: "Transferencia",
+      observations: "",
+    });
+    setEditingPaymentId(null);
+    setShowPaymentForm(false);
+  };
+
+  const editPayment = (payment) => {
+    setPaymentForm({
+      client: payment.client || "",
+      amount: String(payment.amount ?? ""),
+      responsible: payment.responsible || "",
+      plan: payment.plan || "",
+      status: payment.status || "Cobrado",
+      date: payment.date || todayISO(),
+      method: payment.method || "Transferencia",
+      observations: payment.observations || "",
+    });
+    setEditingPaymentId(payment.id);
+    setShowPaymentForm(true);
+    setClientAccountId(null);
+  };
+
+  const changePaymentStatus = (id, status) => {
     savePayments(
-      payments.filter(
-        (payment) => payment.id !== id
+      payments.map((payment) =>
+        payment.id === id ? { ...payment, status } : payment
       )
     );
   };
 
+  const deletePayment = (id) => {
+    if (!window.confirm("¿Eliminar este registro de pago?")) {
+      return;
+    }
+
+    savePayments(
+      payments.filter((payment) => payment.id !== id)
+    );
+  };
   /* =======================================================
      TAREAS
      ======================================================= */
@@ -2669,19 +2777,34 @@ export default function App() {
           <section>
 
             <PageTitle
-              title={clientAccountId ? "Cuenta corriente" : "Pagos / Facturación"}
+              title={clientAccountId ? "Cuenta corriente" : "Pagos y facturación"}
               subtitle={clientAccountId
-                ? `Seguimiento comercial de ${clients.find((client) => client.id === clientAccountId)?.name || "cliente"}.`
-                : "Los presupuestos aprobados pasan automáticamente a facturación."}
-              action={clientAccountId ? (
-                <button
-                  type="button"
-                  style={styles.secondaryButton}
-                  onClick={() => setClientAccountId(null)}
-                >
-                  Ver todos
-                </button>
-              ) : null}
+                ? `Seguimiento completo de ${clients.find((client) => client.id === clientAccountId)?.name || "cliente"}.`
+                : "Registrá cobros, consultá la cuenta corriente y filtrá por cliente o vendedor."}
+              action={
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  {clientAccountId && (
+                    <button
+                      type="button"
+                      style={styles.secondaryButton}
+                      onClick={() => setClientAccountId(null)}
+                    >
+                      Ver todos
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    style={styles.primaryButton}
+                    onClick={() => openNewPayment(
+                      clientAccountId
+                        ? clients.find((client) => client.id === clientAccountId)
+                        : null
+                    )}
+                  >
+                    + Cargar pago
+                  </button>
+                </div>
+              }
             />
 
             {clientAccountId && (() => {
@@ -2696,7 +2819,12 @@ export default function App() {
               const approvedTotal = accountBudgets
                 .filter((budget) => budget.status === "Aprobado")
                 .reduce((sum, budget) => sum + Number(budget.amount || 0), 0);
-              const collectedTotal = accountPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+              const collectedTotal = accountPayments
+                .filter((payment) => payment.status === "Cobrado")
+                .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+              const pendingTotal = accountPayments
+                .filter((payment) => payment.status !== "Cobrado")
+                .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
               const balance = approvedTotal - collectedTotal;
 
               return (
@@ -2711,167 +2839,283 @@ export default function App() {
                   </div>
                   <div style={styles.accountStats}>
                     <div style={styles.accountStatBox}><span>APROBADO</span><strong>{formatMoney(approvedTotal)}</strong></div>
-                    <div style={styles.accountStatBox}><span>REGISTRADO</span><strong>{formatMoney(collectedTotal)}</strong></div>
+                    <div style={styles.accountStatBox}><span>COBRADO</span><strong>{formatMoney(collectedTotal)}</strong></div>
+                    <div style={styles.accountStatBox}><span>PENDIENTE</span><strong>{formatMoney(pendingTotal)}</strong></div>
                     <div style={styles.accountStatBox}><span>SALDO</span><strong>{formatMoney(balance)}</strong></div>
                   </div>
                 </div>
               );
             })()}
 
-            <div
-              style={styles.statsGrid}
-            >
+            {!clientAccountId && (
+              <>
+                <div style={styles.statsGrid}>
+                  <StatCard title="TOTAL COBRADO" value={formatMoney(totalCollected)} />
+                  <StatCard title="REGISTROS" value={payments.length} />
+                  <StatCard
+                    title="PENDIENTE DE COBRO"
+                    value={formatMoney(
+                      payments
+                        .filter((payment) => payment.status !== "Cobrado")
+                        .reduce((sum, payment) => sum + Number(payment.amount || 0), 0)
+                    )}
+                  />
+                </div>
 
-              <StatCard
-                title="TOTAL REGISTRADO"
-                value={formatMoney(
-                  totalCollected
-                )}
-              />
-
-              <StatCard
-                title="REGISTROS"
-                value={payments.length}
-              />
-
-              <StatCard
-                title="PRESUPUESTOS APROBADOS"
-                value={
-                  budgets.filter(
-                    (budget) =>
-                      budget.status ===
-                      "Aprobado"
-                  ).length
-                }
-              />
-
-            </div>
-
-            <div
-              style={
-                styles.tableWrapper
-              }
-            >
-
-              <table
-                style={styles.realTable}
-              >
-
-                <thead>
-                  <tr>
-                    <th>CLIENTE</th>
-                    <th>PLAN</th>
-                    <th>RESPONSABLE</th>
-                    <th>IMPORTE</th>
-                    <th>ESTADO</th>
-                    <th>FECHA</th>
-                    <th></th>
-                  </tr>
-                </thead>
-
-                <tbody>
-
-                  {(clientAccountId ? payments.filter((payment) => { const c = clients.find((client) => client.id === clientAccountId); return c && payment.client?.toLowerCase() === c.name?.toLowerCase(); }) : payments).length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan="7"
-                        style={
-                          styles.emptyTable
-                        }
+                <div style={styles.paymentToolbar}>
+                  <div style={styles.paymentToolbarTitle}>
+                    <span>Filtros</span>
+                    {(paymentClientFilter || paymentResponsibleFilter || paymentStatusFilter) && (
+                      <button
+                        type="button"
+                        style={styles.clearFiltersButton}
+                        onClick={() => {
+                          setPaymentClientFilter("");
+                          setPaymentResponsibleFilter("");
+                          setPaymentStatusFilter("");
+                        }}
                       >
-                        <h2>
-                          No hay facturación
-                        </h2>
+                        Limpiar filtros
+                      </button>
+                    )}
+                  </div>
+                  <div style={styles.paymentFilters}>
+                    <select
+                      value={paymentClientFilter}
+                      onChange={(e) => setPaymentClientFilter(e.target.value)}
+                      style={styles.filterSelect}
+                    >
+                      <option value="">Todos los clientes</option>
+                      {clients
+                        .slice()
+                        .sort((a, b) => a.name.localeCompare(b.name))
+                        .map((client) => (
+                          <option key={client.id} value={client.name}>{client.name}</option>
+                        ))}
+                    </select>
 
-                        <p>
-                          Cuando apruebes un
-                          presupuesto aparecerá
-                          automáticamente acá.
-                        </p>
-                      </td>
-                    </tr>
-                  ) : (
-                    (clientAccountId ? payments.filter((payment) => { const c = clients.find((client) => client.id === clientAccountId); return c && payment.client?.toLowerCase() === c.name?.toLowerCase(); }) : payments).map(
-                      (payment) => (
-                        <tr
-                          key={
-                            payment.id
-                          }
-                        >
+                    <select
+                      value={paymentResponsibleFilter}
+                      onChange={(e) => setPaymentResponsibleFilter(e.target.value)}
+                      style={styles.filterSelect}
+                    >
+                      <option value="">Todos los vendedores</option>
+                      {TEAM.map((person) => (
+                        <option key={person} value={person}>{person}</option>
+                      ))}
+                    </select>
 
-                          <td>
-                            <strong>
-                              {
-                                payment.client
-                              }
-                            </strong>
-                          </td>
+                    <select
+                      value={paymentStatusFilter}
+                      onChange={(e) => setPaymentStatusFilter(e.target.value)}
+                      style={styles.filterSelect}
+                    >
+                      <option value="">Todos los estados</option>
+                      <option value="Cobrado">Cobrado</option>
+                      <option value="Pendiente de cobro">Pendiente de cobro</option>
+                      <option value="Vencido">Vencido</option>
+                    </select>
+                  </div>
+                </div>
+              </>
+            )}
 
-                          <td>
-                            {payment.plan ||
-                              "-"}
-                          </td>
+            {showPaymentForm && (
+              <form onSubmit={savePaymentForm} style={styles.paymentFormCard}>
+                <div style={styles.paymentFormHeader}>
+                  <div>
+                    <div style={styles.accountEyebrow}>{editingPaymentId ? "EDITAR PAGO" : "NUEVO REGISTRO"}</div>
+                    <h2 style={{ margin: "6px 0 0", color: "#2a211c" }}>{editingPaymentId ? "Editar pago" : "Cargar pago"}</h2>
+                  </div>
+                  <button
+                    type="button"
+                    style={styles.secondaryButton}
+                    onClick={() => { setShowPaymentForm(false); setEditingPaymentId(null); }}
+                  >
+                    Cancelar
+                  </button>
+                </div>
 
-                          <td>
-                            {
-                              payment.responsible ||
-                              "-"
-                            }
-                          </td>
+                <div style={styles.paymentFormGrid}>
+                  <Field label="Cliente">
+                    <select
+                      value={paymentForm.client}
+                      onChange={(e) => handlePaymentClientChange(e.target.value)}
+                      style={styles.input}
+                    >
+                      <option value="">Seleccionar cliente</option>
+                      {clients
+                        .slice()
+                        .sort((a, b) => a.name.localeCompare(b.name))
+                        .map((client) => (
+                          <option key={client.id} value={client.name}>{client.name}</option>
+                        ))}
+                    </select>
+                  </Field>
 
-                          <td>
-                            <strong>
-                              {formatMoney(
-                                payment.amount
-                              )}
-                            </strong>
-                          </td>
+                  <Field label="Vendedor / responsable">
+                    <select
+                      value={paymentForm.responsible}
+                      onChange={(e) => setPaymentForm((prev) => ({ ...prev, responsible: e.target.value }))}
+                      style={styles.input}
+                    >
+                      <option value="">Seleccionar vendedor</option>
+                      {TEAM.map((person) => <option key={person} value={person}>{person}</option>)}
+                    </select>
+                  </Field>
 
-                          <td>
-                            <span
-                              style={
-                                styles.paymentBadge
-                              }
-                            >
-                              {
-                                payment.status
-                              }
-                            </span>
-                          </td>
+                  <Field label="Plan">
+                    <input
+                      value={paymentForm.plan}
+                      onChange={(e) => setPaymentForm((prev) => ({ ...prev, plan: e.target.value }))}
+                      placeholder="Ej. Plan Full"
+                      style={styles.input}
+                    />
+                  </Field>
 
-                          <td>
-                            {formatDate(
-                              payment.date
-                            )}
-                          </td>
+                  <Field label="Importe">
+                    <input
+                      type="number"
+                      min="0"
+                      value={paymentForm.amount}
+                      onChange={(e) => setPaymentForm((prev) => ({ ...prev, amount: e.target.value }))}
+                      placeholder="0"
+                      style={styles.input}
+                    />
+                  </Field>
 
-                          <td>
-                            <button
-                              type="button"
-                              style={
-                                styles.deleteSmallButton
-                              }
-                              onClick={() =>
-                                deletePayment(
-                                  payment.id
-                                )
-                              }
-                            >
-                              Eliminar
+                  <Field label="Fecha">
+                    <input
+                      type="date"
+                      value={paymentForm.date}
+                      onChange={(e) => setPaymentForm((prev) => ({ ...prev, date: e.target.value }))}
+                      style={styles.input}
+                    />
+                  </Field>
+
+                  <Field label="Medio de pago">
+                    <select
+                      value={paymentForm.method}
+                      onChange={(e) => setPaymentForm((prev) => ({ ...prev, method: e.target.value }))}
+                      style={styles.input}
+                    >
+                      <option>Transferencia</option>
+                      <option>Efectivo</option>
+                      <option>Mercado Pago</option>
+                      <option>Tarjeta</option>
+                      <option>Débito automático</option>
+                      <option>Otro</option>
+                    </select>
+                  </Field>
+
+                  <Field label="Estado">
+                    <select
+                      value={paymentForm.status}
+                      onChange={(e) => setPaymentForm((prev) => ({ ...prev, status: e.target.value }))}
+                      style={styles.input}
+                    >
+                      <option>Cobrado</option>
+                      <option>Pendiente de cobro</option>
+                      <option>Vencido</option>
+                    </select>
+                  </Field>
+
+                  <Field label="Observaciones">
+                    <textarea
+                      value={paymentForm.observations}
+                      onChange={(e) => setPaymentForm((prev) => ({ ...prev, observations: e.target.value }))}
+                      placeholder="Detalle del pago, período, comprobante..."
+                      style={{ ...styles.input, minHeight: 90, resize: "vertical" }}
+                    />
+                  </Field>
+                </div>
+
+                <div style={styles.paymentFormFooter}>
+                  <button type="submit" style={styles.primaryButton}>
+                    {editingPaymentId ? "Guardar cambios" : "Registrar pago"}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {(() => {
+              const basePayments = clientAccountId
+                ? payments.filter((payment) => {
+                    const c = clients.find((client) => client.id === clientAccountId);
+                    return c && payment.client?.toLowerCase() === c.name?.toLowerCase();
+                  })
+                : payments;
+
+              const filteredPayments = basePayments.filter((payment) =>
+                (!paymentClientFilter || payment.client === paymentClientFilter) &&
+                (!paymentResponsibleFilter || payment.responsible === paymentResponsibleFilter) &&
+                (!paymentStatusFilter || payment.status === paymentStatusFilter)
+              );
+
+              return (
+                <div style={styles.tableWrapper}>
+                  <table style={styles.realTable}>
+                    <thead>
+                      <tr>
+                        <th>CLIENTE</th>
+                        <th>PLAN</th>
+                        <th>VENDEDOR</th>
+                        <th>IMPORTE</th>
+                        <th>MEDIO</th>
+                        <th>ESTADO</th>
+                        <th>FECHA</th>
+                        <th>ACCIONES</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredPayments.length === 0 ? (
+                        <tr>
+                          <td colSpan="8" style={styles.emptyTable}>
+                            <h2>{clientAccountId ? "Sin movimientos" : "No hay pagos registrados"}</h2>
+                            <p>{clientAccountId ? "Todavía no hay movimientos para este cliente." : "Cargá el primer pago para comenzar."}</p>
+                            <button type="button" style={styles.primaryButton} onClick={() => openNewPayment(clientAccountId ? clients.find((client) => client.id === clientAccountId) : null)}>
+                              + Cargar pago
                             </button>
                           </td>
-
                         </tr>
-                      )
-                    )
-                  )}
-
-                </tbody>
-
-              </table>
-
-            </div>
-
+                      ) : filteredPayments.map((payment) => (
+                        <tr key={payment.id}>
+                          <td><strong>{payment.client}</strong></td>
+                          <td>{payment.plan || "-"}</td>
+                          <td>{payment.responsible || "-"}</td>
+                          <td><strong>{formatMoney(payment.amount)}</strong></td>
+                          <td>{payment.method || "-"}</td>
+                          <td><span style={styles.paymentBadge}>{payment.status || "-"}</span></td>
+                          <td>{formatDate(payment.date)}</td>
+                          <td>
+                            <select
+                              defaultValue=""
+                              style={styles.actionSelect}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                e.target.value = "";
+                                if (value === "edit") editPayment(payment);
+                                if (value === "collect") changePaymentStatus(payment.id, "Cobrado");
+                                if (value === "pending") changePaymentStatus(payment.id, "Pendiente de cobro");
+                                if (value === "overdue") changePaymentStatus(payment.id, "Vencido");
+                                if (value === "delete") deletePayment(payment.id);
+                              }}
+                            >
+                              <option value="">Acciones...</option>
+                              <option value="edit">Editar</option>
+                              <option value="collect">Marcar cobrado</option>
+                              <option value="pending">Marcar pendiente</option>
+                              <option value="overdue">Marcar vencido</option>
+                              <option value="delete">Eliminar</option>
+                            </select>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
           </section>
         )}
 
@@ -4049,6 +4293,93 @@ const styles = {
       "space-between",
     alignItems: "center",
     fontWeight: 800,
+  },
+
+  paymentToolbar: {
+    background: "#ffffff",
+    border: "1px solid #e5d9ce",
+    borderRadius: "18px",
+    padding: "18px 20px",
+    marginBottom: "24px",
+    boxShadow: "0 8px 25px rgba(91,64,42,0.04)",
+  },
+
+  paymentToolbarTitle: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "12px",
+    marginBottom: "14px",
+    color: "#594538",
+    fontWeight: 800,
+    textTransform: "uppercase",
+    letterSpacing: "1px",
+    fontSize: "12px",
+  },
+
+  paymentFilters: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+    gap: "12px",
+  },
+
+  filterSelect: {
+    width: "100%",
+    border: "1px solid #d8cabe",
+    borderRadius: "10px",
+    padding: "11px 12px",
+    background: "#fbf7f2",
+    color: "#594538",
+    fontWeight: 700,
+    boxSizing: "border-box",
+  },
+
+  clearFiltersButton: {
+    border: "none",
+    background: "transparent",
+    color: "#a8753f",
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+
+  paymentFormCard: {
+    background: "#ffffff",
+    border: "1px solid #e5d9ce",
+    borderRadius: "18px",
+    padding: "24px",
+    marginBottom: "24px",
+    boxShadow: "0 8px 25px rgba(91,64,42,0.05)",
+  },
+
+  paymentFormHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "20px",
+    marginBottom: "22px",
+  },
+
+  paymentFormGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: "15px 18px",
+  },
+
+  paymentFormFooter: {
+    display: "flex",
+    justifyContent: "flex-end",
+    marginTop: "20px",
+  },
+
+  actionSelect: {
+    minWidth: "145px",
+    border: "1px solid #d8cabe",
+    borderRadius: "10px",
+    padding: "9px 11px",
+    background: "#ffffff",
+    color: "#594538",
+    fontWeight: 700,
+    cursor: "pointer",
   },
 
   paymentBadge: {
